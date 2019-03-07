@@ -26,7 +26,7 @@ Snowflake算法描述：指定机器 & 同一时刻 & 某一并发序列，是�
 
 * sequence (13 bits)   
   每秒下的并发序列，13 bits可支持每秒8192个并发。
-  
+
 **以上参数均可通过Spring进行自定义**
 
 
@@ -39,7 +39,7 @@ Tail指针、Cursor指针用于环形数组上读写slot：
 
 * Tail指针  
   表示Producer生产的最大序号(此序号从0开始，持续递增)。Tail不能超过Cursor，即生产者不能覆盖未消费的slot。当Tail已赶上curosr，此时可通过```rejectedPutBufferHandler```指定PutRejectPolicy
-  
+
 * Cursor指针  
   表示Consumer消费到的最小序号(序号序列与Producer序列相同)。Cursor不能超过Tail，即不能消费未生产的slot。当Cursor已赶上tail，此时可通过```rejectedTakeBufferHandler```指定TakeRejectPolicy
 
@@ -55,10 +55,10 @@ CachedUidGenerator采用了双RingBuffer，Uid-RingBuffer用于存储Uid、Flag-
 #### RingBuffer填充时机 ####
 * 初始化预填充  
   RingBuffer初始化时，预先填充满整个RingBuffer.
-  
+
 * 即时填充  
   Take消费时，即时检查剩余可用slot量(```tail``` - ```cursor```)，如小于设定阈值，则补全空闲slots。阈值可通过```paddingFactor```来进行配置，请参考Quick Start中CachedUidGenerator配置
-  
+
 * 周期填充  
   通过Schedule线程，定时补全空闲slots。可通过```scheduleInterval```配置，以应用定时填充功能，并指定Schedule时间间隔
 
@@ -81,7 +81,7 @@ export JAVA_HOME;
 ```
 
 ### 步骤2: 创建表WORKER_NODE
-运行sql脚本以导入表WORKER_NODE, 脚本如下:
+运行时自动执行 `resources/schema.sql` 脚本以创建表WORKER_NODE, 脚本如下:
 ```sql
 DROP DATABASE IF EXISTS `xxxx`;
 CREATE DATABASE `xxxx` ;
@@ -101,143 +101,62 @@ PRIMARY KEY(ID)
  COMMENT='DB WorkerID Assigner for UID Generator',ENGINE = INNODB;
 ```
 
-修改[mysql.properties](src/test/resources/uid/mysql.properties)配置中, jdbc.url, jdbc.username和jdbc.password, 确保库地址, 名称, 端口号, 用户名和密码正确.
+修改 `application.properties`(src/test/resources/application.properties)中配置, spring.datasource.url, spring.datasource.username和spring.datasource.password, 确保库地址, 名称, 端口号, 用户名和密码正确.
 
 ### 步骤3: 修改Spring配置
 提供了两种生成器: [DefaultUidGenerator](src/main/java/com/dyingtime/uid/impl/DefaultUidGenerator.java)、[CachedUidGenerator](src/main/java/com/dyingtime/uid/impl/CachedUidGenerator.java)。如对UID生成性能有要求, 请使用CachedUidGenerator<br/>
-对应Spring配置分别为: [default-uid-spring.xml](src/test/resources/uid/default-uid-spring.xml)、[cached-uid-spring.xml](src/test/resources/uid/cached-uid-spring.xml)
 
 #### DefaultUidGenerator配置
-```xml
-<!-- DefaultUidGenerator -->
-<bean id="defaultUidGenerator" class="com.baidu.fsg.uid.impl.DefaultUidGenerator" lazy-init="false">
-    <property name="workerIdAssigner" ref="disposableWorkerIdAssigner"/>
 
-    <!-- Specified bits & epoch as your demand. No specified the default value will be used -->
-    <property name="timeBits" value="29"/>
-    <property name="workerBits" value="21"/>
-    <property name="seqBits" value="13"/>
-    <property name="epochStr" value="2016-09-20"/>
-</bean>
- 
-<!-- 用完即弃的WorkerIdAssigner，依赖DB操作 -->
-<bean id="disposableWorkerIdAssigner" class="com.baidu.fsg.uid.worker.DisposableWorkerIdAssigner" />
+```properties
+<!-- DefaultUidGenerator -->
+#以下为可选配置, 如未指定将采用默认值
+com.dyingtime.uid.time-bits=28
+com.dyingtime.uid.worker-bits=22
+com.dyingtime.uid.seq-bits=13
+com.dyingtime.uid.epoch-str=2019-03-07
 
 ```
 
 #### CachedUidGenerator配置
-```xml
+```properties
 <!-- CachedUidGenerator -->
-<bean id="cachedUidGenerator" class="com.baidu.fsg.uid.impl.CachedUidGenerator">
-    <property name="workerIdAssigner" ref="disposableWorkerIdAssigner" />
- 
-    <!-- 以下为可选配置, 如未指定将采用默认值 -->
-    <!-- Specified bits & epoch as your demand. No specified the default value will be used -->
-    <property name="timeBits" value="29"/>
-    <property name="workerBits" value="21"/>
-    <property name="seqBits" value="13"/>
-    <property name="epochStr" value="2016-09-20"/>
- 
-    <!-- RingBuffer size扩容参数, 可提高UID生成的吞吐量. -->
-    <!-- 默认:3， 原bufferSize=8192, 扩容后bufferSize= 8192 << 3 = 65536 -->
-    <property name="boostPower" value="3"></property>
- 
-    <!-- 指定何时向RingBuffer中填充UID, 取值为百分比(0, 100), 默认为50 -->
-    <!-- 举例: bufferSize=1024, paddingFactor=50 -> threshold=1024 * 50 / 100 = 512. -->
-    <!-- 当环上可用UID数量 < 512时, 将自动对RingBuffer进行填充补全 -->
-    <property name="paddingFactor" value="50"></property>
- 
-    <!-- 另外一种RingBuffer填充时机, 在Schedule线程中, 周期性检查填充 -->
-    <!-- 默认:不配置此项, 即不实用Schedule线程. 如需使用, 请指定Schedule线程时间间隔, 单位:秒 -->
-    <property name="scheduleInterval" value="60"></property>
- 
-    <!-- 拒绝策略: 当环已满, 无法继续填充时 -->
-    <!-- 默认无需指定, 将丢弃Put操作, 仅日志记录. 如有特殊需求, 请实现RejectedPutBufferHandler接口(支持Lambda表达式) -->
-    <property name="rejectedPutBufferHandler" ref="XxxxYourPutRejectPolicy"></property>
- 
-    <!-- 拒绝策略: 当环已空, 无法继续获取时 -->
-    <!-- 默认无需指定, 将记录日志, 并抛出UidGenerateException异常. 如有特殊需求, 请实现RejectedTakeBufferHandler接口(支持Lambda表达式) -->
-    <property name="rejectedTakeBufferHandler" ref="XxxxYourTakeRejectPolicy"></property>
- 
-</bean>
- 
-<!-- 用完即弃的WorkerIdAssigner, 依赖DB操作 -->
-<bean id="disposableWorkerIdAssigner" class="com.baidu.fsg.uid.worker.DisposableWorkerIdAssigner" />
- 
-```
+#以下为可选配置, 如未指定将采用默认值
+com.dyingtime.uid.time-bits=28
+com.dyingtime.uid.worker-bits=22
+com.dyingtime.uid.seq-bits=13
+com.dyingtime.uid.epoch-str=2019-03-07
 
-#### Mybatis配置
-[mybatis-spring.xml](src/test/resources/uid/mybatis-spring.xml)配置说明如下:
+#RingBuffer size扩容参数, 可提高UID生成的吞吐量.
+#默认:3, 原bufferSize=8192, 扩容后bufferSize= 8192 << 3 = 65536
+com.dyingtime.uid.cached.boost-power=3
 
-```xml
-<!-- Spring annotation扫描 -->
-<context:component-scan base-package="com.baidu.fsg.uid" />
+#指定何时向RingBuffer中填充UID, 取值为百分比(0, 100), 默认为50
+#举例: bufferSize=1024, paddingFactor=50 -> threshold=1024 * 50 / 100 = 512.
+#当环上可用UID数量 < 512时, 将自动对RingBuffer进行填充补全
+com.dyingtime.uid.cached.padding-factor=50
+ 
+#另外一种RingBuffer填充时机, 在Schedule线程中, 周期性检查填充
+#默认:不配置此项, 即不实用Schedule线程. 如需使用, 请指定Schedule线程时间间隔, 单位:秒
+com.dyingtime.uid.cached.schedule-interval=60
 
-<bean id="sqlSessionFactory" class="org.mybatis.spring.SqlSessionFactoryBean">
-    <property name="dataSource" ref="dataSource" />
-    <property name="mapperLocations" value="classpath:/META-INF/mybatis/mapper/M_WORKER*.xml" />
-</bean>
-
-<!-- 事务相关配置 -->
-<tx:annotation-driven transaction-manager="transactionManager" order="1" />
-
-<bean id="transactionManager" class="org.springframework.jdbc.datasource.DataSourceTransactionManager">
-	<property name="dataSource" ref="dataSource" />
-</bean>
-
-<!-- Mybatis Mapper扫描 -->
-<bean class="org.mybatis.spring.mapper.MapperScannerConfigurer">
-	<property name="annotationClass" value="org.springframework.stereotype.Repository" />
-	<property name="basePackage" value="com.baidu.fsg.uid.worker.dao" />
-	<property name="sqlSessionFactoryBeanName" value="sqlSessionFactory" />
-</bean>
-
-<!-- 数据源配置 -->
-<bean id="dataSource" parent="abstractDataSource">
-	<property name="driverClassName" value="${mysql.driver}" />
-	<property name="maxActive" value="${jdbc.maxActive}" />
-	<property name="url" value="${jdbc.url}" />
-	<property name="username" value="${jdbc.username}" />
-	<property name="password" value="${jdbc.password}" />
-</bean>
-
-<bean id="abstractDataSource" class="com.alibaba.druid.pool.DruidDataSource" destroy-method="close">
-	<property name="filters" value="${datasource.filters}" />
-	<property name="defaultAutoCommit" value="${datasource.defaultAutoCommit}" />
-	<property name="initialSize" value="${datasource.initialSize}" />
-	<property name="minIdle" value="${datasource.minIdle}" />
-	<property name="maxWait" value="${datasource.maxWait}" />
-	<property name="testWhileIdle" value="${datasource.testWhileIdle}" />
-	<property name="testOnBorrow" value="${datasource.testOnBorrow}" />
-	<property name="testOnReturn" value="${datasource.testOnReturn}" />
-	<property name="validationQuery" value="${datasource.validationQuery}" />
-	<property name="timeBetweenEvictionRunsMillis" value="${datasource.timeBetweenEvictionRunsMillis}" />
-	<property name="minEvictableIdleTimeMillis" value="${datasource.minEvictableIdleTimeMillis}" />
-	<property name="logAbandoned" value="${datasource.logAbandoned}" />
-	<property name="removeAbandoned" value="${datasource.removeAbandoned}" />
-	<property name="removeAbandonedTimeout" value="${datasource.removeAbandonedTimeout}" />
-</bean>
-
-<bean id="batchSqlSession" class="org.mybatis.spring.SqlSessionTemplate">
-	<constructor-arg index="0" ref="sqlSessionFactory" />
-	<constructor-arg index="1" value="BATCH" />
-</bean>
 ```
 
 ### 步骤4: 运行示例单测
+
 运行单测[CachedUidGeneratorTest](src/test/java/com/baidu/fsg/uid/CachedUidGeneratorTest.java), 展示UID生成、解析等功能
 ```java
-@Resource
-private UidGenerator uidGenerator;
+@Autowired
+private UidGenerator defaultUidGenerator;
 
 @Test
 public void testSerialGenerate() {
     // Generate UID
-    long uid = uidGenerator.getUID();
+    long uid = defaultUidGenerator.getUID();
 
     // Parse UID into [Timestamp, WorkerId, Sequence]
     // {"UID":"180363646902239241","parsed":{    "timestamp":"2017-01-19 12:15:46",    "workerId":"4",    "sequence":"9"        }}
-    System.out.println(uidGenerator.parseUID(uid));
+    System.out.println(defaultUidGenerator.parseUID(uid));
 
 }
 ```
@@ -253,17 +172,17 @@ public void testSerialGenerate() {
 在MacBook Pro（2.7GHz Intel Core i5, 8G DDR3）上进行了CachedUidGenerator（单实例）的UID吞吐量测试. <br/>
 首先固定住workerBits为任选一个值(如20), 分别统计timeBits变化时(如从25至32, 总时长分别对应1年和136年)的吞吐量, 如下表所示:<br/>
 
-|timeBits|25|26|27|28|29|30|31|32|
-|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-|throughput|6,831,465|7,007,279|6,679,625|6,499,205|6,534,971|7,617,440|6,186,930|6,364,997|
+|  timeBits  |    25     |    26     |    27     |    28     |    29     |    30     |    31     |    32     |
+| :--------: | :-------: | :-------: | :-------: | :-------: | :-------: | :-------: | :-------: | :-------: |
+| throughput | 6,831,465 | 7,007,279 | 6,679,625 | 6,499,205 | 6,534,971 | 7,617,440 | 6,186,930 | 6,364,997 |
 
 ![throughput1](doc/throughput1.png)
 
 再固定住timeBits为任选一个值(如31), 分别统计workerBits变化时(如从20至29, 总重启次数分别对应1百万和500百万)的吞吐量, 如下表所示:<br/>
 
-|workerBits|20|21|22|23|24|25|26|27|28|29|
-|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-|throughput|6,186,930|6,642,727|6,581,661|6,462,726|6,774,609|6,414,906|6,806,266|6,223,617|6,438,055|6,435,549|
+| workerBits |    20     |    21     |    22     |    23     |    24     |    25     |    26     |    27     |    28     |    29     |
+| :--------: | :-------: | :-------: | :-------: | :-------: | :-------: | :-------: | :-------: | :-------: | :-------: | :-------: |
+| throughput | 6,186,930 | 6,642,727 | 6,581,661 | 6,462,726 | 6,774,609 | 6,414,906 | 6,806,266 | 6,223,617 | 6,438,055 | 6,435,549 |
 
 ![throughput1](doc/throughput2.png)
 
@@ -271,8 +190,8 @@ public void testSerialGenerate() {
 
 最后, 固定住workerBits和timeBits位数(如23和31), 分别统计不同数目(如1至8,本机CPU核数为4)的UID使用者情况下的吞吐量,<br/>
 
-|workerBits|1|2|3|4|5|6|7|8|
-|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-|throughput|6,462,726|6,542,259|6,077,717|6,377,958|7,002,410|6,599,113|7,360,934|6,490,969|
+| workerBits |     1     |     2     |     3     |     4     |     5     |     6     |     7     |     8     |
+| :--------: | :-------: | :-------: | :-------: | :-------: | :-------: | :-------: | :-------: | :-------: |
+| throughput | 6,462,726 | 6,542,259 | 6,077,717 | 6,377,958 | 7,002,410 | 6,599,113 | 7,360,934 | 6,490,969 |
 
 ![throughput1](doc/throughput3.png)
