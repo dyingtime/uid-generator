@@ -7,9 +7,12 @@ import com.dyingtime.uid.worker.WorkerIdAssigner;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.domain.EntityScan;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 
 /**
  * @author dyingtime
@@ -20,6 +23,9 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 @ConditionalOnClass({DefaultUidGenerator.class, CachedUidGenerator.class})
 @EnableConfigurationProperties(UidProperties.class)
+@ComponentScan("com.dyingtime")
+@EnableJpaRepositories("com.dyingtime.uid")
+@EntityScan("com.dyingtime.uid")
 public class UidGeneratorAutoConfigure {
 
     @Autowired

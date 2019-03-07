@@ -15,15 +15,15 @@ import org.springframework.stereotype.Service;
 public class WorkerNodeService implements WorkerNodeDAO {
 
     @Autowired
-    WorkerNodeRepository repository;
+    WorkerNodeRepository workerNodeRepository;
 
     @Override
     public WorkerNode getWorkerNodeByHostPort(String host, String port) {
-        return repository.findByHostNameAndPort(host, port);
+        return workerNodeRepository.findByHostNameAndPort(host, port);
     }
 
     @Override
     public void addWorkerNode(WorkerNode workerNode) {
-        repository.save(workerNode);
+        workerNodeRepository.save(workerNode);
     }
 }
